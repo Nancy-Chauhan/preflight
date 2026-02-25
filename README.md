@@ -83,6 +83,25 @@ claude --plugin-dir ./preflight
 /preflight map
 ```
 
+### Export report to file
+```
+/preflight 500 --export md          # Save as Markdown
+/preflight 500 --export html        # Save as HTML
+/preflight 500 --export pdf         # Save as PDF
+/preflight 500 --export all         # Save all formats
+/preflight map --export pdf         # Map only, exported as PDF
+```
+
+Supported formats:
+| Format | File | Notes |
+|--------|------|-------|
+| `md` | `./preflight-report.md` | Same content as inline report. Share with LLMs for follow-up fixes. |
+| `html` | `./preflight-report.html` | Self-contained HTML with styled tables, color-coded severity badges, and A4 print layout. |
+| `pdf` | `./preflight-report.pdf` | Generated from HTML via Chrome headless. Falls back to Chromium, wkhtmltopdf, or weasyprint. |
+| `all` | All three files | Generates MD, HTML, and PDF in sequence. |
+
+The `--export` flag is additive -- the inline report always displays in chat. Exported files are saved to the project root for easy discovery.
+
 ## What It Analyzes
 
 ### Service Detection

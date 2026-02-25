@@ -7,7 +7,7 @@ description: >
   deployment costs, scaling limits, service dependencies, migration planning,
   infrastructure mapping, or "can my stack handle X users?" Also triggers on
   "preflight", "preflight check", "launch readiness", or "what will this cost?"
-argument-hint: "[user-count | 'map' | blank for full report]"
+argument-hint: "[user-count | 'map'] [--export md|pdf|html|all]"
 ---
 
 # Preflight: Operational Simulation for Any Codebase
@@ -20,6 +20,13 @@ Interpret `$ARGUMENTS`:
 - **No arguments or blank**: Run the full report. Simulate at 100, 1,000, and 10,000 monthly active users.
 - **A number** (e.g., `500`): Simulate at that user count. Also show a 10x projection.
 - **`map`**: Skip cost/simulation. Only produce the infrastructure dependency map.
+- **`--export <format>`**: After displaying the inline report, also save the report to file(s). Supported formats:
+  - `md` -- Save as `./preflight-report.md`
+  - `html` -- Save as `./preflight-report.html`
+  - `pdf` -- Save as `./preflight-report.pdf` (requires HTML to be generated first)
+  - `all` -- Save all three formats (MD, HTML, PDF)
+
+The `--export` flag is additive and can be combined with any other argument. The inline report always displays regardless of export flags. Examples: `/preflight 500 --export md`, `/preflight map --export all`, `/preflight --export pdf`.
 
 ---
 
@@ -440,6 +447,326 @@ Tier analysis: [when current maxes out, next tier cost, next cliff]
 ### Can Wait
 [Items that only matter at higher scale]
 ```
+
+---
+
+## Phase 6: Export Report
+
+**Only run this phase if `--export` was specified in the arguments.**
+
+After displaying the full inline report, export it to the requested format(s). The export order is always: Markdown first, then HTML, then PDF (since PDF depends on HTML).
+
+### 6.1 Markdown Export (`--export md` or `--export all`)
+
+Write the report content to `./preflight-report.md` using the Write tool. Use the exact same Markdown content that was displayed inline -- no modifications needed.
+
+### 6.2 HTML Export (`--export html`, `--export pdf`, or `--export all`)
+
+Generate a self-contained HTML file at `./preflight-report.html`. The HTML must be a single file with all CSS embedded (no external stylesheets, no JavaScript dependencies).
+
+Use this exact HTML/CSS template structure, filling in the report data:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Preflight Report: [Project Name]</title>
+<style>
+  @page { margin: 1.5cm; size: A4; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #1a1a2e;
+    background: #fff;
+    padding: 40px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 28px;
+    font-weight: 800;
+    color: #0f0f23;
+    margin-bottom: 4px;
+    letter-spacing: -0.5px;
+  }
+  .subtitle {
+    font-size: 14px;
+    color: #6b7280;
+    margin-bottom: 8px;
+  }
+  .target-badge {
+    display: inline-block;
+    background: #2563eb;
+    color: #fff;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 24px;
+  }
+  .meta-row {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .meta-item {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px 16px;
+    flex: 1;
+    min-width: 180px;
+  }
+  .meta-item .label { font-size: 10px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+  .meta-item .value { font-size: 16px; font-weight: 700; color: #0f0f23; }
+  h2 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #0f0f23;
+    margin-top: 32px;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #2563eb;
+  }
+  h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1e293b;
+    margin-top: 20px;
+    margin-bottom: 8px;
+  }
+  h4 {
+    font-size: 12px;
+    font-weight: 600;
+    color: #334155;
+    margin-top: 14px;
+    margin-bottom: 6px;
+  }
+  p { margin-bottom: 8px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+    font-size: 10.5px;
+  }
+  th {
+    background: #f1f5f9;
+    color: #334155;
+    font-weight: 600;
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 2px solid #cbd5e1;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: top;
+  }
+  tr:hover { background: #f8fafc; }
+  .finding {
+    border-left: 4px solid;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    border-radius: 0 6px 6px 0;
+    background: #fafafa;
+    page-break-inside: avoid;
+  }
+  .finding.critical { border-color: #7c2d12; background: #fef2f2; }
+  .finding.fail { border-color: #dc2626; background: #fef2f2; }
+  .finding.warn { border-color: #f59e0b; background: #fffbeb; }
+  .finding.pass { border-color: #16a34a; background: #f0fdf4; }
+  .finding .badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .finding.critical .badge { background: #7c2d12; color: #fff; }
+  .finding.fail .badge { background: #dc2626; color: #fff; }
+  .finding.warn .badge { background: #f59e0b; color: #fff; }
+  .finding.pass .badge { background: #16a34a; color: #fff; }
+  .finding .title { font-weight: 700; font-size: 12px; }
+  .finding .file { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 10px; color: #6b7280; margin-top: 4px; }
+  .finding .desc { margin-top: 4px; font-size: 11px; }
+  .finding .fix { margin-top: 4px; font-size: 11px; color: #1e40af; }
+  .code-block {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 10px;
+    line-height: 1.6;
+    margin-bottom: 16px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .cost-highlight {
+    background: #dbeafe;
+    border: 1px solid #93c5fd;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+  .cost-highlight .amount { font-size: 24px; font-weight: 800; color: #1d4ed8; }
+  .cost-highlight .label { font-size: 11px; color: #3b82f6; }
+  .dep-graph {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 10px;
+    line-height: 1.6;
+    margin-bottom: 16px;
+    white-space: pre;
+  }
+  .section-intro {
+    color: #475569;
+    font-size: 11.5px;
+    margin-bottom: 12px;
+  }
+  .two-col {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .two-col > div { flex: 1; }
+  .phantom-badge {
+    display: inline-block;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    color: #64748b;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .user-borne {
+    display: inline-block;
+    background: #ede9fe;
+    border: 1px solid #c4b5fd;
+    color: #6d28d9;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .self-hosted {
+    display: inline-block;
+    background: #ecfdf5;
+    border: 1px solid #86efac;
+    color: #15803d;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .saas {
+    display: inline-block;
+    background: #dbeafe;
+    border: 1px solid #93c5fd;
+    color: #1d4ed8;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid #e2e8f0;
+    font-size: 10px;
+    color: #94a3b8;
+    text-align: center;
+  }
+  @media print {
+    body { padding: 0; }
+    .finding { page-break-inside: avoid; }
+    h2 { page-break-after: avoid; }
+  }
+</style>
+</head>
+<body>
+<!-- Fill in report content here using semantic HTML -->
+<!-- Use the CSS classes above for consistent styling -->
+<footer>
+  Generated by <strong>Preflight</strong> &mdash; github.com/chauhan/preflight<br>
+  Report date: [current date]
+</footer>
+</body>
+</html>
+```
+
+**HTML content mapping from the Markdown report:**
+
+- **Title**: `<h1>Preflight Report</h1>` with `<div class="subtitle">` for the project description
+- **Target user count**: `<span class="target-badge">Target: N Monthly Active Users</span>`
+- **Key metrics**: Use `<div class="meta-row">` with `<div class="meta-item">` cards
+- **Section headers**: `<h2>` tags (get the blue bottom border automatically)
+- **Tables**: Standard `<table>` with `<thead>` and `<tbody>`
+- **Findings**: Each finding is a `<div class="finding [severity]">` where severity is `critical`, `fail`, `warn`, or `pass`. Inside use: `<span class="badge">SEVERITY</span>`, `<span class="title">`, `<div class="file">`, `<div class="desc">`, `<div class="fix">`
+- **Code blocks / ASCII diagrams**: `<div class="code-block">` for dark background code, `<div class="dep-graph">` for light background dependency graphs
+- **Cost highlights**: `<div class="cost-highlight">` with `.amount` and `.label` children
+- **Service type badges**: `<span class="self-hosted">Self-hosted</span>`, `<span class="saas">SaaS</span>`, `<span class="user-borne">User-Borne</span>`, `<span class="phantom-badge">PHANTOM</span>`
+
+### 6.3 PDF Export (`--export pdf` or `--export all`)
+
+Generate the HTML file first (if not already generated in 6.2), then convert it to PDF.
+
+Try these tools in order, using the first one found:
+
+1. **Google Chrome**: Run via Bash:
+   ```
+   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --disable-gpu --print-to-pdf=./preflight-report.pdf --no-pdf-header-footer ./preflight-report.html
+   ```
+   Also try `google-chrome` and `google-chrome-stable` as command names for Linux.
+
+2. **Chromium**: Run via Bash:
+   ```
+   chromium --headless --disable-gpu --print-to-pdf=./preflight-report.pdf --no-pdf-header-footer ./preflight-report.html
+   ```
+   Also try `chromium-browser`.
+
+3. **wkhtmltopdf**: Run via Bash:
+   ```
+   wkhtmltopdf --page-size A4 --margin-top 15mm --margin-bottom 15mm --margin-left 15mm --margin-right 15mm ./preflight-report.html ./preflight-report.pdf
+   ```
+
+4. **weasyprint**: Run via Bash:
+   ```
+   weasyprint ./preflight-report.html ./preflight-report.pdf
+   ```
+
+If none of these tools are available, tell the user:
+> PDF generation requires a headless browser or PDF tool. Install Chrome, Chromium, wkhtmltopdf, or weasyprint. Alternatively, open `./preflight-report.html` in your browser and print to PDF (Cmd+P / Ctrl+P).
+
+If the HTML was generated only as a dependency for PDF (i.e., the user requested `--export pdf` but not `--export html` or `--export all`), keep the HTML file anyway -- it's useful as a fallback.
+
+### 6.4 Export Summary
+
+After all exports complete, print a summary:
+
+```
+**Exported files:**
+- Markdown: ./preflight-report.md
+- HTML: ./preflight-report.html
+- PDF: ./preflight-report.pdf
+```
+
+Only list the files that were actually created.
 
 ---
 
