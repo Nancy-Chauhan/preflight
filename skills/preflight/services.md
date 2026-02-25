@@ -556,6 +556,71 @@ drizzle.config.ts -> read "dialect" field:
   "sqlite"     -> check if using Turso driver
 ```
 
+---
+
+## Self-Hosted / Infrastructure Services
+
+These are commonly found in docker-compose files. They are NOT SaaS -- cost = server resources.
+
+### Temporal (Workflow Engine)
+- **Packages**: `@temporalio/client`, `@temporalio/worker`, `@temporalio/workflow`, `@temporalio/activity`
+- **Docker image**: `temporalio/auto-setup`
+- **Env vars**: `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `TEMPORAL_TASK_QUEUE`
+- **Cost model**: Self-hosted (server RAM). Cloud offering exists at $200+/mo.
+- **Resource needs**: 1-2 GB RAM, requires PostgreSQL or Cassandra for persistence
+- **Key settings to check**: `maxConcurrentWorkflowTaskExecutions`, `maxConcurrentActivityTaskExecutions`, activity `startToCloseTimeout`, namespace retention period
+- **Gotchas**: Worker concurrency caps are hard limits on throughput. Default namespace retention is often 7 days (old workflow data auto-deleted). Activity timeouts that are too short cause silent failures. gRPC payload limit is ~4 MB (large payloads need external storage spillover).
+
+### Kafka / Redpanda (Event Streaming)
+- **Packages**: `kafkajs`, `@confluentinc/kafka-javascript`, `kafka-node`
+- **Docker images**: `redpandadata/redpanda`, `confluentinc/cp-kafka`, `bitnami/kafka`
+- **Env vars**: `KAFKA_BROKERS`, `KAFKA_BOOTSTRAP_SERVERS`, `LOG_KAFKA_BROKERS`
+- **Cost model**: Self-hosted (server RAM + disk, CPU-intensive). Confluent Cloud starts at $0.11/GB.
+- **Resource needs**: 1-4 GB RAM (Redpanda in dev mode: 1 GB, production: 2-4 GB+), SSD recommended
+- **Key settings to check**: `sessionTimeout` (too low = spurious rebalances), `maxBytes` per message, topic partition count, consumer group configuration, `allowAutoTopicCreation`
+- **Gotchas**: Redpanda `--mode=dev-container --smp=1` is single-core dev mode, will bottleneck at scale. Kafka consumer rebalances cause duplicate processing if not idempotent. Large messages (>1 MB default) are rejected. Consumer lag is the key metric to monitor.
+
+### OpenSearch / Elasticsearch (Search & Analytics)
+- **Packages**: `@opensearch-project/opensearch`, `@elastic/elasticsearch`
+- **Docker images**: `opensearchproject/opensearch`, `docker.elastic.co/elasticsearch/elasticsearch`
+- **Env vars**: `OPENSEARCH_URL`, `ELASTICSEARCH_URL`, `OPENSEARCH_USERNAME`, `OPENSEARCH_PASSWORD`
+- **Cost model**: Self-hosted (JVM heap is the primary cost). Elastic Cloud starts at $95/mo.
+- **Resource needs**: Minimum 512 MB JVM heap (dev), 1-2 GB for production, 4 GB+ at scale
+- **Key settings to check**: `OPENSEARCH_JAVA_OPTS` (heap size), `discovery.type`, security plugin enabled/disabled
+- **Gotchas**: JVM heap at 512 MB will degrade quickly with indexing load. Indices grow without bounds unless lifecycle policies are configured. Search query latency degrades with index size. Security plugin disabled in dev is a production risk.
+
+### MinIO (S3-Compatible Storage)
+- **Packages**: `minio`, `@aws-sdk/client-s3` (with MinIO endpoint)
+- **Docker images**: `minio/minio`
+- **Env vars**: `MINIO_ENDPOINT`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_BUCKET_NAME`
+- **Cost model**: Self-hosted (disk space). S3 pricing for cloud alternative.
+- **Resource needs**: 512 MB RAM, disk scales with stored data
+- **Gotchas**: Default credentials (`minioadmin/minioadmin`) in dev. No built-in redundancy in single-node mode. Moving to S3 requires changing endpoint config but SDK calls are compatible.
+
+### Redis (self-hosted)
+- **Docker images**: `redis`, `valkey/valkey`
+- **Env vars**: `REDIS_URL`, `REDIS_HOST`, `REDIS_PORT`
+- **Cost model**: Self-hosted (server RAM).
+- **Resource needs**: 256 MB - 2 GB RAM depending on data volume
+- **Gotchas**: Data loss on restart if persistence is not configured (`appendonly yes`). `maxmemory` not set = uses all available RAM. Connection limits default to 10,000 but OS file descriptor limits may be lower.
+
+### Loki (Log Aggregation)
+- **Docker images**: `grafana/loki`
+- **Env vars**: `LOKI_URL`, `LOKI_TENANT_ID`, `LOKI_USERNAME`, `LOKI_PASSWORD`
+- **Cost model**: Self-hosted (disk + RAM). Grafana Cloud free tier: 50 GB logs/month.
+- **Resource needs**: 512 MB - 1 GB RAM, disk scales with log retention
+- **Gotchas**: Retention period determines disk usage growth. High-cardinality labels cause performance issues.
+
+### RabbitMQ (Message Broker)
+- **Packages**: `amqplib`, `amqp-connection-manager`
+- **Docker images**: `rabbitmq`, `rabbitmq:management`
+- **Env vars**: `RABBITMQ_URL`, `AMQP_URL`, `RABBITMQ_DEFAULT_USER`, `RABBITMQ_DEFAULT_PASS`
+- **Cost model**: Self-hosted (server RAM). CloudAMQP free tier: 1M messages/month.
+- **Resource needs**: 256 MB - 1 GB RAM
+- **Gotchas**: Unacknowledged messages accumulate in memory. Queue length growth without consumers = memory exhaustion. Default `prefetch` is unlimited (bad for fairness).
+
+---
+
 ## Common Env Var -> Service Patterns
 
 When you see env vars without matching packages, use these patterns:

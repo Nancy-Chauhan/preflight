@@ -27,9 +27,15 @@ Interpret `$ARGUMENTS`:
 
 Scan the project to find every external service, dependency, and infrastructure component. Do all of these steps:
 
-### 1.1 Package Manager Scan
-Read the dependency manifest:
-- **Node.js**: `package.json` (check both `dependencies` and `devDependencies`)
+### 1.1 Monorepo Detection
+First, check if this is a monorepo:
+- Look for workspace definitions in `package.json` (`workspaces` field), `pnpm-workspace.yaml`, `turbo.json`, `nx.json`, or `lerna.json`
+- If monorepo: find ALL `package.json` files across workspaces and scan each. Track which workspace each service belongs to (e.g., "OpenAI detected in `worker/`, Clerk detected in `backend/` and `frontend/`")
+- This matters because different workspaces may use different services and have different scaling characteristics
+
+### 1.2 Package Manager Scan
+Read the dependency manifest(s):
+- **Node.js**: `package.json` (check both `dependencies` and `devDependencies`). In monorepos, scan root AND all workspace package.json files.
 - **Python**: `requirements.txt`, `pyproject.toml`, `Pipfile`
 - **Go**: `go.mod`
 - **Ruby**: `Gemfile`
@@ -37,13 +43,13 @@ Read the dependency manifest:
 
 Cross-reference every dependency against the service detection table in `services.md`. Record each match with the exact package name and version.
 
-### 1.2 Environment Variable Scan
-Read all env files in priority order: `.env.example`, `.env.local`, `.env`, `.env.production`, `.env.development`. For each env var:
+### 1.3 Environment Variable Scan
+Read all env files in priority order: `.env.example`, `.env.local`, `.env`, `.env.production`, `.env.development`. In monorepos, check env files in each workspace directory too. For each env var:
 - Identify which service it belongs to (use patterns in `services.md`)
 - Note if it contains URLs, API keys, connection strings, or secrets
 - Parse connection strings for provider hints (e.g., `DATABASE_URL` containing `.supabase.` or `.neon.tech`)
 
-### 1.3 Infrastructure Config Scan
+### 1.4 Infrastructure Config Scan
 Check for these files and extract deployment/hosting info:
 - `vercel.json` or `.vercel/` directory -> Vercel
 - `fly.toml` -> Fly.io
@@ -57,17 +63,37 @@ Check for these files and extract deployment/hosting info:
 - `cdk.json`, `sam.yaml` -> AWS CDK / SAM
 - `.github/workflows/*.yml` -> CI/CD pipeline, look for deploy targets
 
-### 1.4 ORM & Database Detection
+### 1.5 Self-Hosted Infrastructure Detection
+When you find `docker-compose*.yml` files, read them carefully. Services running as Docker containers are SELF-HOSTED -- their cost is server RAM/CPU/disk, NOT SaaS pricing. For each Docker service:
+- Record what it is (PostgreSQL, Redis, Kafka/Redpanda, OpenSearch, MinIO, etc.)
+- Note its resource settings (memory limits, JVM heap, CPU allocation, volume mounts)
+- Mark it as "Self-hosted" in the tier column, not a SaaS tier
+- Calculate its cost as a fraction of the server's total cost
+
+Common self-hosted services to watch for:
+- `postgres` / `mysql` / `mariadb` -> Database (cost = server RAM + disk)
+- `redis` / `valkey` -> Cache (cost = server RAM)
+- `redpanda` / `kafka` / `confluent` -> Event streaming (cost = server RAM + disk, CPU-intensive)
+- `opensearch` / `elasticsearch` -> Search/analytics (cost = JVM heap, very RAM-hungry)
+- `minio` -> S3-compatible storage (cost = disk)
+- `temporal` / `temporal-ui` -> Workflow engine (cost = server RAM)
+- `grafana` / `loki` / `prometheus` -> Observability (cost = server RAM + disk)
+- `nginx` / `traefik` / `caddy` -> Reverse proxy (cost = minimal)
+- `rabbitmq` / `nats` -> Message broker (cost = server RAM)
+
+When self-hosted infra is detected, the cost projection should estimate TOTAL SERVER REQUIREMENTS (RAM, CPU, disk) rather than per-service SaaS pricing.
+
+### 1.6 ORM & Database Detection
 If an ORM is detected:
 - **Prisma**: Read `prisma/schema.prisma`, extract the `provider` field (postgresql, mysql, sqlite, mongodb, cockroachdb)
 - **Drizzle**: Read `drizzle.config.ts` or `drizzle.config.js`, check the `dialect` field
 - **TypeORM**: Check `ormconfig.json` or `data-source.ts` for database type
 - **Sequelize**: Check config files for dialect
 
-### 1.5 Import Pattern Scan
+### 1.7 Import Pattern Scan
 Use Grep to search source files for import patterns of services detected in 1.1. Count how many files import each service. This reveals how deeply integrated each service is.
 
-### 1.6 CI/CD and DevOps Scan
+### 1.8 CI/CD and DevOps Scan
 Read CI/CD configs for:
 - Deploy targets and environments
 - Scheduled jobs / cron triggers
@@ -87,10 +113,11 @@ This phase is critical. You must trace HOW services are called, not just THAT th
 ### 2.1 Find All Entry Points
 Identify every way work enters the system:
 
-- **API Routes**: In Next.js: `app/api/**/route.ts`. In Express: look for `app.get/post/put/delete`. In Django: `urls.py`. In Rails: `routes.rb`. In FastAPI: decorated functions.
+- **API Routes**: In Next.js: `app/api/**/route.ts`. In Express/NestJS: look for controllers, `app.get/post/put/delete`, `@Get()/@Post()` decorators. In Django: `urls.py`. In Rails: `routes.rb`. In FastAPI: decorated functions.
 - **Cron Jobs / Scheduled Tasks**: Look for cron config in `vercel.json`, `fly.toml`, GitHub Actions schedules, or cron libraries (`node-cron`, `cron`, `@inngest/inngest`).
 - **Webhooks**: API routes that verify signatures (look for `svix`, HMAC verification, webhook secret usage).
-- **Queue Consumers**: Look for BullMQ workers, SQS consumers, Inngest functions, Trigger.dev tasks.
+- **Queue Consumers**: Look for BullMQ workers, SQS consumers, Inngest functions, Trigger.dev tasks, Kafka consumers (`kafkajs`), AMQP consumers (`amqplib`).
+- **Workflow Engines**: Look for Temporal workflows (`@temporalio/*`), Inngest functions, Step Functions. These orchestrate multi-step operations and have their own concurrency/timeout settings.
 - **Pages / Client-Side**: Pages that make API calls on load or user interaction.
 
 ### 2.2 Trace Each Entry Point
@@ -142,6 +169,23 @@ Categorize each flow:
 ## Phase 3: Operational Simulation
 
 Using the flows from Phase 2, simulate a realistic day and month at the target user count.
+
+### 3.0 Cost Ownership Classification
+Before projecting costs, classify WHO pays for each service:
+
+- **Platform cost** (operator pays): Hosting, database, self-hosted infra, SaaS subscriptions (Clerk, PostHog, etc.). These scale with total users and are paid by whoever runs the platform.
+- **User-borne cost** (end users pay): When users bring their own API keys (common for LLM-powered tools, cloud integrations). The platform operator doesn't pay -- each user pays their own provider directly.
+- **Per-use cost** (operator pays per user action): Transaction fees (Stripe), per-email costs (Resend), metered APIs. Operator pays but proportional to usage.
+
+This distinction is critical. A platform where users provide their own OpenAI keys has very different economics than one where the operator pays for all LLM calls. Report costs in separate sections when both types exist.
+
+### 3.0.1 Self-Hosted Infrastructure Sizing
+When the project uses self-hosted Docker services, calculate total server requirements:
+- Sum RAM needs across all containers (with headroom)
+- Consider CPU-intensive services (search indexing, event streaming, PDF generation)
+- Estimate disk growth per month
+- Recommend specific instance types (e.g., "t3.large: 8 GB RAM, $60/mo" or "t3.xlarge: 16 GB RAM, $120/mo")
+- Note services that will need more resources at scale (OpenSearch heap, Kafka/Redpanda cores)
 
 ### 3.1 Daily Simulation Narrative
 Write a narrative describing what happens in a typical day. Be specific with numbers:
@@ -242,6 +286,15 @@ Trace what happens when a service call fails:
 - Indexes that degrade with size (GIN, full-text)
 - Connection pool exhaustion at scale
 
+**Secret & Encryption Key Risks**
+- Encryption master keys where rotation would break all existing encrypted data
+- Session secrets where changing them invalidates all active sessions
+- JWT secrets where changing them invalidates all issued tokens
+- Default/placeholder secrets in env examples that might be used in production (e.g., `CHANGE_ME_32_CHAR_SECRET_KEY!!!!`)
+
+**Phantom Dependencies**
+- Packages in package.json that are imported by a framework transitively but never used directly in code (e.g., `mqtt` pulled in by `@nestjs/microservices` but no MQTT code exists). Flag these as "detected but unused" to avoid confusion.
+
 ### Severity Levels
 - **PASS**: No issue at the target user count
 - **WARN**: Will become an issue soon, or has a workaround but is fragile
@@ -294,11 +347,21 @@ For each infrastructure node, list what else needs updating:
 |                         | user table schema                                  |
 ```
 
-### 5.4 Migration Pitfall Flags
+### 5.4 Inter-Service Dependencies (Self-Hosted)
+When self-hosted Docker services are detected, map their internal dependency chain:
+- Which containers depend on which (via `depends_on`, connection strings)
+- Startup order requirements (DB must be healthy before app starts)
+- Shared volumes and data directories
+- Network topology (which ports are exposed externally vs internal-only)
+- Services that share the same database (e.g., app DB and Temporal DB in same PostgreSQL instance)
+
+### 5.5 Migration Pitfall Flags
 For common migration scenarios, flag specific risks:
 - **Vercel to self-hosted**: Cron jobs need external scheduler, `after()` won't work, edge functions need replacement, env vars need manual setup
+- **Self-hosted to cloud managed**: Docker compose services need SaaS replacements (PostgreSQL -> Supabase/Neon, Redis -> Upstash, MinIO -> S3), each with different connection strings and auth
 - **Changing domain**: Every OAuth provider needs updated, DNS propagation delay, email domain re-verification
 - **Switching database**: Migration scripts, stored procedures/RPCs, full-text search differences, index strategy changes
+- **Changing encryption/secret keys**: Flag if any master encryption key change would render existing data unreadable
 
 ---
 
@@ -390,3 +453,7 @@ Tier analysis: [when current maxes out, next tier cost, next cliff]
 6. **Check for missing things too.** No error handling on a critical path? No retry on an API call that can fail? No monitoring? Flag it.
 7. **Use `services.md` as your reference** for detection patterns and pricing data. If a service isn't listed there, use WebSearch to find current pricing.
 8. **Read `examples.md`** if you need to calibrate the level of detail and tone of the output.
+9. **Distinguish self-hosted from SaaS.** Docker services cost server RAM/CPU, not SaaS fees. Report server sizing, not per-service pricing.
+10. **Distinguish who pays.** If users bring their own API keys (LLM, cloud), that's user-borne cost, not platform cost. Report separately.
+11. **Flag phantom dependencies.** Packages installed but never imported in code are noise. Note them as "detected but unused" so the report stays accurate.
+12. **Monorepos need per-workspace tracking.** In a monorepo, different workspaces (frontend, backend, worker) have different services and different scaling characteristics. Don't lump them together.
