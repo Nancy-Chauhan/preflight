@@ -1,0 +1,9 @@
+.DS_Store
+*.swp
+*.swo
+*~
+.env
+.env.local
+.env.production
+node_modules/
+.claude/

@@ -1,0 +1,22 @@
+{
+  "name": "preflight",
+  "version": "1.0.0",
+  "description": "Know exactly where your system breaks before you ship. Scans your codebase, traces every service call, and simulates what happens at scale - finding bottlenecks, cost cliffs, rate limits, and breaking points.",
+  "author": {
+    "name": "chauhan",
+    "url": "https://github.com/chauhan"
+  },
+  "homepage": "https://github.com/chauhan/preflight",
+  "repository": "https://github.com/chauhan/preflight",
+  "license": "MIT",
+  "keywords": [
+    "preflight",
+    "cost",
+    "infrastructure",
+    "deployment",
+    "scaling",
+    "bottleneck",
+    "dependencies",
+    "launch-readiness"
+  ]
+}
