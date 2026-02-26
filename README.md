@@ -7,105 +7,82 @@
 
 **Know exactly where your system breaks before you ship.**
 
-Preflight is a Claude Code plugin that scans your codebase, traces every service call, and simulates what happens when real users hit your system. It finds the bottlenecks, cost cliffs, rate limits, and breaking points you'd otherwise discover in production.
+Preflight is a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin that reads your codebase, traces every service call, and simulates what happens when real users hit your system. It finds the bottlenecks, cost cliffs, rate limits, and breaking points you'd otherwise discover in production.
 
-## What It Does
+```bash
+git clone https://github.com/Nancy-Chauhan/preflight.git
+cd your-project && claude --plugin-dir ../preflight
+/preflight 500   # simulate at 500 users
+```
 
-Most cost calculators just list services and their pricing pages. Preflight actually **reads your code** and tells you:
+---
 
-- "Your newsletter cron has a `LIMIT 100` -- at 150 users, 50 people silently miss their newsletter"
-- "Your RSS ingest needs 285 LLM calls but Gemini free tier is 15 RPM -- that's 19 minutes minimum"
-- "Your Vercel Hobby plan has a 10s function timeout but your batch job takes 90 seconds"
+## Table of Contents
+
+- [What it finds](#what-it-finds)
+- [Quick start](#quick-start)
+- [Usage](#usage)
+- [Export](#export)
+- [What it covers](#what-it-covers)
+- [How it works](#how-it-works)
+- [FAQ](#faq)
+- [Contributing](#contributing)
+- [License](#license)
+
+## What It Finds
+
+- "Your Stripe webhook handler isn't idempotent -- a retry will charge the customer twice"
+- "Your image upload accepts files up to 50MB but Cloudflare Workers has a 25MB request body limit"
+- "At 500 orders/day you'll make 1,500 Stripe API calls -- that hits the 100/sec rate limit during flash sales"
+- "Your inventory check and payment are separate calls -- two users can buy the last item at the same time"
+- "Your Vercel Hobby plan has a 10s function timeout but your PDF invoice generation takes 40 seconds"
 - "At 500 users you'll send 3,300 emails/month -- Resend free tier caps at 3,000"
 - "If you change your EC2 instance, also update: Cloudflare DNS, Google OAuth callback, webhook URLs"
 
-## Example Output
-
-```
-# Preflight Report: MyApp
-## Target: 500 monthly active users
-
-## Bottlenecks & Breaking Points
-
-[FAIL] Newsletter cron hard cap at 100 users
-  File: src/lib/queries.ts:42
-  Issue: LIMIT 100 in get_users_due_for_newsletter(). At 500 users,
-         ~125 are due per hour. 25 users silently skipped.
-  Fix: Implement pagination or loop until all users processed.
-
-[FAIL] Vercel Hobby 10s function timeout
-  File: src/app/api/newsletters/route.ts (maxDuration = 300)
-  Issue: maxDuration=300 requires Vercel Pro. On Hobby, killed at 10s.
-  Fix: Upgrade to Vercel Pro ($20/mo).
-
-[WARN] Resend daily email limit
-  File: src/lib/email/client.ts
-  Issue: Free tier = 100 emails/day. You need 110+/day at 500 users.
-  Fix: Upgrade to Resend Pro ($20/mo).
-
-## Monthly Cost Summary
-
-| Service     | 100 users | 500 users | 5,000 users |
-|-------------|-----------|-----------|-------------|
-| Resend      | $0        | $20       | $80         |
-| Supabase    | $0        | $0        | $25         |
-| Gemini      | $0        | $0        | $20         |
-| Vercel      | $0        | $20       | $20         |
-| **TOTAL**   | **$0**    | **$40**   | **$145**    |
-```
-
-## Install
+## Quick Start
 
 ```bash
-claude /plugin install chauhan/preflight
-```
+# 1. Clone the plugin
+git clone https://github.com/Nancy-Chauhan/preflight.git
 
-Or manually:
-```bash
-git clone https://github.com/chauhan/preflight.git
-claude --plugin-dir ./preflight
+# 2. Open your project in Claude Code with the plugin
+cd your-project
+claude --plugin-dir ../preflight
+
+# 3. Run a preflight check for 500 users
+/preflight 500
 ```
 
 ## Usage
 
-### Full report (simulate at 100 / 1K / 10K users)
-```
-/preflight
-```
-
-### Simulate at a specific user count
-```
-/preflight 500
+```bash
+/preflight               # Full report at 100 / 1K / 10K users
+/preflight 500           # Simulate at a specific user count
+/preflight map           # Infrastructure dependency map only
 ```
 
-### Infrastructure dependency map only
-```
-/preflight map
+## Export
+
+```bash
+/preflight 500 --export md     # Markdown
+/preflight 500 --export html   # Styled HTML with print layout
+/preflight 500 --export pdf    # PDF via headless Chrome
+/preflight 500 --export all    # All formats
+/preflight map --export pdf    # Map only as PDF
 ```
 
-### Export report to file
-```
-/preflight 500 --export md          # Save as Markdown
-/preflight 500 --export html        # Save as HTML
-/preflight 500 --export pdf         # Save as PDF
-/preflight 500 --export all         # Save all formats
-/preflight map --export pdf         # Map only, exported as PDF
-```
-
-Supported formats:
-| Format | File | Notes |
-|--------|------|-------|
-| `md` | `./preflight-report.md` | Same content as inline report. Share with LLMs for follow-up fixes. |
-| `html` | `./preflight-report.html` | Self-contained HTML with styled tables, color-coded severity badges, and A4 print layout. |
-| `pdf` | `./preflight-report.pdf` | Generated from HTML via Chrome headless. Falls back to Chromium, wkhtmltopdf, or weasyprint. |
+| Format | Output file | Description |
+|--------|-------------|-------------|
+| `md` | `./preflight-report.md` | Shareable Markdown. Feed to LLMs for follow-up fixes. |
+| `html` | `./preflight-report.html` | Self-contained HTML with color-coded severity badges. |
+| `pdf` | `./preflight-report.pdf` | Generated from HTML. Falls back to Chromium/wkhtmltopdf/weasyprint. |
 | `all` | All three files | Generates MD, HTML, and PDF in sequence. |
 
-The `--export` flag is additive -- the inline report always displays in chat. Exported files are saved to the project root for easy discovery.
+The `--export` flag is additive -- the inline report always displays in chat.
 
-## What It Analyzes
+## What It Covers
 
-### Service Detection
-Scans your `package.json`, env files, config files, and imports to detect:
+### Services
 
 | Category | Services |
 |----------|----------|
@@ -120,64 +97,44 @@ Scans your `package.json`, env files, config files, and imports to detect:
 | Cache/Queue | Upstash Redis, Inngest, Trigger.dev, BullMQ |
 | Messaging | Twilio, Svix |
 
-### Flow Tracing
-Traces how services are actually used in your code:
-- Maps every API route, cron job, and webhook to the services it calls
+### Capabilities
+
+- Traces every API route, cron job, and webhook to the services it calls
 - Detects multipliers ("for each user, call LLM once and send one email")
-- Finds hard caps, concurrency limits, and timeout values in your code
-
-### Operational Simulation
-Simulates a real day at your target user count:
-- How many LLM calls, emails, DB queries happen daily
-- Whether your cron jobs can process all users within their time window
-- When you'll hit rate limits and tier thresholds
-- Data growth projections (DB size, storage, indexes)
-
-### Bottleneck Detection
-Finds breaking points with specific file references:
-- Hard caps in your code that silently skip users
-- Rate limit math (can your batch complete within the limit?)
-- Timing conflicts (processing time vs function timeout)
-- Cascading failures (what breaks when one service fails?)
-- Multi-instance issues (in-memory state that won't work at scale)
-
-### Infrastructure Dependency Map
-Maps how your services connect:
-- Environment variable dependency graph
-- Domain/URL chain (DNS -> hosting -> OAuth -> webhooks)
-- "If you change X, also update Y" table
-- Migration pitfall flags
-
-## Supported Frameworks
-
-Works with any codebase. Optimized detection for:
-- **JavaScript/TypeScript**: Next.js, Express, Fastify, Remix, Nuxt
-- **Python**: Django, FastAPI, Flask
-- **Go**: Standard library, Gin, Echo
-- **Ruby**: Rails
-- **Rust**: Actix, Axum
+- Finds hard caps, concurrency limits, and timeout values in code
+- Simulates daily volume: LLM calls, emails, DB queries at your target user count
+- Checks if cron jobs can process all users within their time window
+- Calculates when you hit rate limits and tier thresholds
+- Projects data growth (DB size, storage, indexes)
+- Maps environment variable and domain/URL dependency chains
+- Flags cascading failures and multi-instance issues (in-memory state at scale)
 
 ## How It Works
 
-Preflight is a Claude Code skill -- a structured prompt that instructs Claude to analyze your codebase using its built-in tools (file reading, code search, web search). It doesn't install any dependencies or run any code in your project. It's read-only.
+- **Read-only analysis** -- reads your code with Claude's built-in tools. No dependencies installed, no code executed, nothing modified.
+- **Detection + live pricing** -- ships with pricing data for 40+ services in `services.md`, and verifies current pricing via web search.
+- **Structured skill** -- `SKILL.md` (analysis instructions), `services.md` (detection patterns + pricing), `examples.md` (output calibration).
 
-The skill includes:
-- `SKILL.md` -- Step-by-step analysis instructions
-- `services.md` -- Detection patterns and pricing data for 40+ services
-- `examples.md` -- Example outputs for calibrating detail level
+## FAQ
 
-Pricing data in `services.md` is a reference starting point. The skill also uses web search to verify current pricing, so it stays up to date even as services change their plans.
+**What do I need to run Preflight?**
+Claude Code 2.0 or later. No other dependencies.
+
+**Does it modify my code?**
+No. Preflight is completely read-only. It doesn't install anything, run your code, or write to any files (unless you use `--export`).
+
+**How does it know service pricing?**
+It ships with pricing data for 40+ services and uses web search to verify current rates at analysis time.
+
+**Can I add a service that isn't supported?**
+Yes. Add an entry to `services.md` with package names, env variable patterns, pricing tiers, rate limits, and known gotchas. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+**What languages and frameworks work?**
+Any codebase works. Optimized detection for Next.js, Express, Fastify, Remix, Nuxt, Django, FastAPI, Flask, Rails, Gin, Echo, Actix, and Axum.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-The easiest way to contribute is adding new services to `services.md`. Each service entry needs:
-- Package names for detection
-- Environment variable patterns
-- All pricing tiers (not just free)
-- Rate limits and quotas per tier
-- Known gotchas
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. The easiest way to contribute is adding new services to `services.md`.
 
 ## License
 

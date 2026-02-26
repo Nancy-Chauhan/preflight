@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "description": "Know exactly where your system breaks before you ship. Scans your codebase, traces every service call, and simulates what happens at scale - finding bottlenecks, cost cliffs, rate limits, and breaking points.",
   "author": {
-    "name": "chauhan",
-    "url": "https://github.com/chauhan"
+    "name": "Nancy Chauhan",
+    "url": "https://github.com/Nancy-Chauhan"
   },
-  "homepage": "https://github.com/chauhan/preflight",
-  "repository": "https://github.com/chauhan/preflight",
+  "homepage": "https://github.com/Nancy-Chauhan/preflight",
+  "repository": "https://github.com/Nancy-Chauhan/preflight",
   "license": "MIT",
   "keywords": [
     "preflight",
