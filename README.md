@@ -9,6 +9,8 @@
 
 Preflight is a [Claude Code](https://docs.anthropic.com/en/docs/claude-code) plugin that reads your codebase, traces every service call, and simulates what happens when real users hit your system. It finds the bottlenecks, cost cliffs, rate limits, and breaking points you'd otherwise discover in production.
 
+![Preflight overview — most bugs only appear under real traffic. Preflight simulates production to find breaking points.](assets/preflight-overview.png)
+
 ```bash
 git clone https://github.com/Nancy-Chauhan/preflight.git
 cd your-project && claude --plugin-dir ../preflight
